@@ -1,4 +1,4 @@
-"""Stage 3 of the model: clinical trial direct cost (臨床試驗直接花費), fixed per phase (not sampled).
+"""Stage 3 of the model: clinical trial direct cost, fixed per phase (not sampled).
 
 A phase's cost is paid on entering the phase, whether it then succeeds or fails: Phase 2 always,
 Phase 3 only after passing Phase 2. Submission/review is not charged (ASSUMPTION_SUBMISSION_COST_EXCLUDED).
