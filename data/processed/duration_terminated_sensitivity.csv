@@ -1,0 +1,25 @@
+rule,statuses,phase,n,median,p25,p75,min,max
+a,completed,PHASE2,13616,17.02,9.95,28.42,1.02,173.34
+a,completed+terminated,PHASE2,16388,17.05,9.99,28.52,1.02,179.98
+a,terminated only,PHASE2,2772,18.05,11.01,28.94,1.02,179.98
+a,completed,PHASE3,14892,19.75,11.59,32.0,1.02,165.13
+a,completed+terminated,PHASE3,16788,19.98,11.93,32.62,1.02,176.03
+a,terminated only,PHASE3,1896,22.79,12.98,35.95,1.02,176.03
+b,completed,PHASE2,6743,18.46,10.94,30.55,1.02,173.34
+b,completed+terminated,PHASE2,8438,18.69,11.01,30.51,1.02,179.98
+b,terminated only,PHASE2,1695,19.29,11.75,30.32,1.05,179.98
+b,completed,PHASE3,7074,21.62,12.55,35.32,1.02,165.13
+b,completed+terminated,PHASE3,8146,21.98,12.81,35.84,1.02,165.13
+b,terminated only,PHASE3,1072,25.05,14.43,38.61,1.02,131.29
+c,completed,PHASE2,6286,17.61,10.02,29.47,1.02,173.34
+c,completed+terminated,PHASE2,7634,17.97,10.12,29.93,1.02,173.34
+c,terminated only,PHASE2,1348,19.96,11.67,31.02,1.02,120.97
+c,completed,PHASE3,6777,20.7,11.99,33.87,1.02,148.04
+c,completed+terminated,PHASE3,7698,21.03,12.02,34.56,1.02,148.04
+c,terminated only,PHASE3,921,25.53,14.72,39.03,1.02,131.29
+d,completed,PHASE2,6479,17.18,9.99,29.04,1.02,173.34
+d,completed+terminated,PHASE2,7773,17.87,10.02,29.47,1.02,173.34
+d,terminated only,PHASE2,1294,19.11,11.25,30.98,1.02,126.03
+d,completed,PHASE3,7051,20.14,11.99,33.68,1.02,148.04
+d,completed+terminated,PHASE3,7982,20.9,11.99,34.23,1.02,148.04
+d,terminated only,PHASE3,931,24.8,14.0,38.47,1.02,131.29

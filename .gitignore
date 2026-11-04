@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.DS_Store
+
+# Raw API snapshots: large and reproducible via scripts/fetch_ctgov.py
+data/raw/
+
+# Third-party source documents (BIO report, Wong et al. full text, FDA and ASPE documents):
+# copyright belongs to their publishers. Download links are in data/sources/README.md.
+data/sources/*
+!data/sources/README.md

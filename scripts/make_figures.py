@@ -1,0 +1,350 @@
+"""Figures for an English-speaking (LinkedIn) audience, from the model outputs.
+
+Reads only data/processed/*.csv written by run_costs.py (no simulation here), and default /
+sensitivity values from data/assumptions.csv by param_id.
+Probabilities and costs drawn are closed-form (analytic) values; time-based probabilities
+(within X years) have no closed form and are simulated. Simulated values otherwise only verify.
+
+Outputs (1600 px wide PNG):
+  docs/figures/fig1_p_approval_by_n.png
+  docs/figures/fig2_cost_distribution_n5.png
+  docs/figures/fig3_sensitivity.png
+  docs/figures/figure_numbers.md   every number on the figures, analytic next to simulated
+
+Usage: python scripts/run_costs.py && python scripts/make_figures.py
+"""
+from __future__ import annotations
+
+import csv
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.patches import Patch  # noqa: E402
+
+from biotech_pipeline_mc.params import load_sensitivity_values, load_value  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[1]
+PROC = ROOT / "data" / "processed"
+OUT = ROOT / "docs" / "figures"
+
+# Validated categorical slots 1-2 (dataviz reference palette, light surface); fixed per entity.
+COLOR = {"BIO": "#2a78d6", "Wong": "#eb6834"}
+LABEL = {"BIO": "BIO 2011–2020", "Wong": "Wong et al. 2019"}
+SURFACE, INK, INK2, GRID, NEUTRAL = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df", "#8a8984"
+WIDTH_IN, DPI = 10, 160  # 1600 px wide
+
+SOURCES = ("Sources: BIO/Informa/QLS 2021 (success rates 2011–2020); Wong, Siah & Lo 2019 (sensitivity); "
+           "ClinicalTrials.gov (trial durations); HHS ASPE 2014 (per-trial costs).")
+ILLUSTRATIVE = "Illustrative model, not investment or clinical advice."
+TARGET = 0.80  # reporting threshold
+N_FIG = 5      # portfolio size used in Fig 2 and Fig 3
+HORIZON_FIG = 5  # years, for the within-X lines and Fig 3 (i)
+SCEN = ["BIO", "Wong"]
+
+plt.rcParams.update({
+    "font.family": "DejaVu Sans", "font.size": 11, "text.color": INK, "axes.labelcolor": INK2,
+    "axes.edgecolor": GRID, "xtick.color": INK2, "ytick.color": INK2, "axes.facecolor": SURFACE,
+    "figure.facecolor": SURFACE, "savefig.facecolor": SURFACE, "axes.spines.top": False,
+    "axes.spines.right": False, "axes.grid": True, "grid.color": GRID, "grid.linewidth": 0.8,
+    "axes.axisbelow": True,
+})
+
+
+def read(name: str) -> list[dict]:
+    with (PROC / name).open(newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def footer(fig, captions: list[str]) -> None:
+    """Captions (one line each) above the sources line and the illustrative-model line."""
+    lines = [(c, 9.5, "normal") for c in captions] + [(SOURCES, 8.5, "normal"), (ILLUSTRATIVE, 8.5, "bold")]
+    y = 0.012
+    for text, size, weight in reversed(lines):
+        fig.text(0.01, y, text, ha="left", va="bottom", fontsize=size, color=INK2, weight=weight)
+        y += 0.03
+
+
+def titles(fig, title: str, subtitle: str) -> None:
+    fig.text(0.01, 0.975, title, ha="left", va="top", fontsize=16, weight="bold", color=INK)
+    fig.text(0.01, 0.925, subtitle, ha="left", va="top", fontsize=11, color=INK2)
+
+
+def spread(ys: list[float], min_gap: float) -> list[float]:
+    """Nudge label y positions apart (keeping order) so two-line labels do not overlap."""
+    order = sorted(range(len(ys)), key=lambda i: ys[i])
+    out = list(ys)
+    for a, b in zip(order, order[1:]):
+        out[b] = max(out[b], out[a] + min_gap)
+    return out
+
+
+def first_n(ns: list[int], values: list[float]) -> int | None:
+    return next((n for n, v in zip(ns, values) if v >= TARGET), None)
+
+
+def fmt_n(n: int | None, ns: list[int]) -> str:
+    return f"N = {n}" if n is not None else f"not reached by N = {ns[-1]}"
+
+
+def main() -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
+    cost = read("cost_results.csv")
+    within = read("cost_approval_within.csv")
+    dist = read("cost_distribution.csv")
+    p_values = load_sensitivity_values("ASSUMPTION_P_PRIORITY")
+    p_mid = sorted(p_values)[len(p_values) // 2]
+    gap_base = load_value("ASSUMPTION_GAP_MONTHS", "value_months", ("ASSUMPTION",))
+    gap_hi = max(load_sensitivity_values("ASSUMPTION_GAP_MONTHS"))
+    overhead_values = load_sensitivity_values("ASSUMPTION_OVERHEAD_MULTIPLIER")
+    overhead_base = load_value("ASSUMPTION_OVERHEAD_MULTIPLIER", "value", ("ASSUMPTION",))
+    ns = sorted({int(r["n_assets"]) for r in cost})
+
+    def crow(s, n, case="base"):
+        return next(r for r in cost if r["case"] == case and r["scenario"] == s and int(r["n_assets"]) == n)
+
+    def wrow(s, n, gap, p):
+        return next(r for r in within if r["scenario"] == s and int(r["n_assets"]) == n
+                    and float(r["gap_months"]) == gap and float(r["p_priority"]) == p)
+
+    def within_y(s, n, y, gap=gap_base, p=p_mid):
+        return float(wrow(s, n, gap, p)[f"p_approved_within_{y}y"])
+
+    notes = ["# Figure numbers", "",
+             "Generated by `scripts/make_figures.py` from `data/processed/*.csv` (written by `run_costs.py`).", "",
+             "**Rule:** probabilities and costs on the figures are analytic (closed-form) values. "
+             "Probabilities of approval *within X years* depend on trial durations and have no closed form, "
+             "so they are simulated (200,000 portfolios per cell). Other simulated values are shown here only "
+             "to verify the analytic ones.", "",
+             "**Simulated cost per approval** = total cost summed over all simulated runs ÷ approvals summed over "
+             "all runs (`total.sum() / n_approved.sum()` in `run_costs.py`). The previous code used "
+             "`total.mean() / n_approved.mean()`; both means are over the same number of runs, so the two are "
+             "algebraically identical. The code now uses the sum form and was rerun; the numbers did not change.", ""]
+
+    # ---------- Fig 1 ----------
+    eventual = {s: [float(crow(s, n)["p_at_least_one_analytic"]) for n in ns] for s in SCEN}
+    eventual_sim = {s: [float(crow(s, n)["p_at_least_one_sim"]) for n in ns] for s in SCEN}
+    w_lo = {s: [within_y(s, n, HORIZON_FIG, gap=gap_hi) for n in ns] for s in SCEN}
+    w_top = {s: [within_y(s, n, HORIZON_FIG) for n in ns] for s in SCEN}
+    n_target = {s: first_n(ns, eventual[s]) for s in SCEN}
+
+    fig, ax = plt.subplots(figsize=(WIDTH_IN, 6.9))
+    fig.subplots_adjust(left=0.08, right=0.84, top=0.84, bottom=0.27)
+    labels = []  # (y, text, color): right-hand end labels, de-overlapped below
+    for s in SCEN:
+        c = COLOR[s]
+        ax.fill_between(ns, w_lo[s], w_top[s], color=c, alpha=0.15, linewidth=0)
+        ax.plot(ns, w_top[s], color=c, lw=2, ls=(0, (5, 3)))
+        ax.plot(ns, eventual[s], color=c, lw=2, marker="o", ms=6, markeredgecolor=SURFACE, markeredgewidth=1.5)
+        labels += [(eventual[s][-1], f"{LABEL[s]}\neventually", INK),
+                   ((w_top[s][-1] + w_lo[s][-1]) / 2, f"{LABEL[s]}\nwithin {HORIZON_FIG} years", INK2)]
+        n = n_target[s]
+        if n is not None:
+            v = eventual[s][ns.index(n)]
+            ax.plot([n], [v], marker="o", ms=13, mfc="none", mec=c, mew=2)
+            ax.annotate(f"N = {n}: {v:.0%}", (n, v), xytext=(0, -26), textcoords="offset points", ha="center",
+                        fontsize=10, color=INK, weight="bold")
+    for y, (_, text, color) in zip(spread([lab[0] for lab in labels], 0.085), labels):
+        ax.text(ns[-1] + 0.25, y, text, color=color, fontsize=10, va="center")
+    x0 = ns[0] - 0.5
+    ax.hlines(TARGET, x0, ns[-1] + 0.1, color=INK2, lw=1, ls=":")  # stops before the right-hand labels
+    ax.text(x0 + 0.1, TARGET + 0.012, f"{TARGET:.0%}", color=INK2, fontsize=10, ha="left", va="bottom")
+    ax.set_xlim(x0, ns[-1] + 0.5)
+    ax.set_ylim(0, 1.02)
+    ax.set_xticks(ns)
+    ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
+    ax.set_xlabel("Number of Phase 2 assets started together (N)")
+    ax.set_ylabel("Probability of at least one FDA approval")
+    ax.legend(handles=[plt.Line2D([], [], color=COLOR[s], lw=2, marker="o", label=LABEL[s]) for s in SCEN]
+              + [plt.Line2D([], [], color=INK2, lw=2, label="Eventually (solid)"),
+                 plt.Line2D([], [], color=INK2, lw=2, ls=(0, (5, 3)),
+                            label=f"Within {HORIZON_FIG} years, {gap_base:g}-month gaps (optimistic)"),
+                 Patch(facecolor=NEUTRAL, alpha=0.3,
+                       label=f"Band: gaps between phases {gap_base:g}–{gap_hi:g} months")],
+              loc="lower right", frameon=False, fontsize=10)
+    titles(fig, f"How many Phase 2 drugs for an {TARGET:.0%} chance of at least one approval?",
+           f"Circled: smallest N reaching {TARGET:.0%} eventually. Solid lines are exact; "
+           f"{HORIZON_FIG}-year lines are simulated.")
+    footer(fig, [
+        "Eventually = 1 − (1 − p)^N, p = product of phase success rates; assets independent; no resubmission "
+        "cycles.",
+        f"Within {HORIZON_FIG} years (simulated): top of band = {gap_base:g}-month gaps between phases, bottom = "
+        f"{gap_hi:g}-month gaps; priority-review share {p_mid:g}.",
+        f"Within-{HORIZON_FIG}-years lines assume no gap between phases at the top of the band; this is optimistic.",
+    ])
+    fig.savefig(OUT / "fig1_p_approval_by_n.png", dpi=DPI)
+    plt.close(fig)
+
+    notes += ["## Fig 1: P(at least one approval) vs N", "",
+              "Eventually: analytic 1 − (1 − p)^N (`p_at_least_one_analytic`) next to simulated "
+              f"(`p_at_least_one_sim`). Within {HORIZON_FIG} years: simulated only, p_priority = {p_mid:g}.", "",
+              "| N | BIO eventually (analytic) | BIO (sim) | Wong eventually (analytic) | Wong (sim) |",
+              "|---|---|---|---|---|"]
+    for i, n in enumerate(ns):
+        notes.append(f"| {n} | {eventual['BIO'][i]:.4f} | {eventual_sim['BIO'][i]:.4f} | "
+                     f"{eventual['Wong'][i]:.4f} | {eventual_sim['Wong'][i]:.4f} |")
+    notes += ["", f"Smallest N reaching {TARGET:.0%} eventually (analytic): "
+              + ", ".join(f"{s} {fmt_n(n_target[s], ns)}" for s in SCEN), ""]
+
+    # ---------- Fig 2 ----------
+    d = {s: [r for r in dist if r["scenario"] == s and int(r["n_assets"]) == N_FIG] for s in SCEN}
+    values = sorted({float(r["total_usd_m"]) for s in SCEN for r in d[s]})
+    pz = {s: float(crow(s, N_FIG)["p_zero_approved_analytic"]) for s in SCEN}
+    fig, ax = plt.subplots(figsize=(WIDTH_IN, 6.6))
+    fig.subplots_adjust(left=0.08, right=0.98, top=0.76, bottom=0.27)
+    width = 0.38
+    for j, s in enumerate(SCEN):
+        prob = {float(r["total_usd_m"]): float(r["probability_analytic"]) for r in d[s]}
+        zero = {float(r["total_usd_m"]): float(r["probability_and_zero_approved_analytic"]) for r in d[s]}
+        xs = [k + (j - 0.5) * (width + 0.02) for k in range(len(values))]
+        ax.bar(xs, [prob.get(v, 0) for v in values], width, color=COLOR[s], edgecolor=SURFACE, linewidth=2,
+               label=f"{LABEL[s]}  ·  P(zero approvals) = {pz[s]:.1%}")
+        ax.bar(xs, [zero.get(v, 0) for v in values], width, color="none", edgecolor=SURFACE, hatch="///",
+               linewidth=0)
+        for x, v in zip(xs, values):
+            if v in prob:
+                txt = f"{prob[v]:.0%}" if prob[v] >= 0.005 else "<1%"
+                ax.text(x, prob[v] + 0.006, txt, ha="center", va="bottom", fontsize=9, color=INK2)
+    ax.set_xticks(range(len(values)))
+    ax.set_xticklabels([f"${v:,.0f}M\n{k} of {N_FIG} reach Ph 3" for k, v in enumerate(values)], fontsize=10)
+    ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0, decimals=0))
+    ax.set_ylabel("Probability")
+    ax.set_xlabel(f"Total clinical trial direct cost for {N_FIG} Phase 2 assets (US$ million, nominal)")
+    handles, _ = ax.get_legend_handles_labels()
+    handles.append(Patch(facecolor=NEUTRAL, edgecolor=SURFACE, hatch="///", label="Hatched: zero approvals"))
+    ax.legend(handles=handles, loc="lower left", bbox_to_anchor=(0, 1.01), ncol=2, frameon=False, fontsize=10)
+    titles(fig, f"Clinical trial direct cost of {N_FIG} Phase 2 assets",
+           "Costs are fixed per trial, so spending varies only with how many assets reach Phase 3")
+    footer(fig, [
+        "Exact probabilities (binomial). Phase 2 cost is paid by every asset; Phase 3 cost only after passing "
+        "Phase 2.",
+        "One trial per phase at ASPE average cost; submission and review costs excluded; 2004–2012 nominal US$, "
+        "undiscounted.",
+    ])
+    fig.savefig(OUT / "fig2_cost_distribution_n5.png", dpi=DPI)
+    plt.close(fig)
+
+    notes += [f"## Fig 2: total cost distribution, N = {N_FIG} (base case)", "",
+              "From `cost_distribution.csv`. P = P(total); joint = P(total and zero approvals).", "",
+              "| Total (US$ M) | Reach Ph 3 | BIO P (analytic) | BIO P (sim) | BIO joint (analytic) | BIO joint (sim) "
+              "| Wong P (analytic) | Wong P (sim) | Wong joint (analytic) | Wong joint (sim) |",
+              "|---|---|---|---|---|---|---|---|---|---|"]
+    for k, v in enumerate(values):
+        cells = []
+        for s in SCEN:
+            r = next(r for r in d[s] if float(r["total_usd_m"]) == v)
+            cells += [f"{float(r[c]):.4f}" for c in ("probability_analytic", "probability_sim",
+                                                     "probability_and_zero_approved_analytic",
+                                                     "probability_and_zero_approved_sim")]
+        notes.append(f"| {v:.2f} | {k} | " + " | ".join(cells) + " |")
+    notes += ["", "P(zero approvals): " + ", ".join(
+        f"{s} {pz[s]:.4f} analytic / {float(crow(s, N_FIG)['p_zero_approved_sim']):.4f} sim" for s in SCEN), ""]
+
+    # ---------- Fig 3 ----------
+    def cpa(s, case, kind="analytic"):
+        return float(crow(s, N_FIG, case)[f"cost_per_approval_{kind}"])
+
+    oh_lo, oh_hi = min(overhead_base, *overhead_values), max(overhead_base, *overhead_values)
+    oh_case = {v: ("base" if v == overhead_base else f"overhead_multiplier={v:g}") for v in (oh_lo, oh_hi)}
+
+    def timing_rows(y):
+        return [
+            ("Success-rate source", "BIO", within_y("BIO", N_FIG, y), "Wong", within_y("Wong", N_FIG, y)),
+            ("Gap between phases", f"{gap_hi:g} mo", within_y("BIO", N_FIG, y, gap=gap_hi),
+             f"{gap_base:g} mo", within_y("BIO", N_FIG, y)),
+            ("Priority-review share", f"{min(p_values):g}", within_y("BIO", N_FIG, y, p=min(p_values)),
+             f"{max(p_values):g}", within_y("BIO", N_FIG, y, p=max(p_values))),
+        ]
+
+    def cost_rows(kind):
+        return [
+            ("Success-rate source", "Wong", cpa("Wong", "base", kind), "BIO", cpa("BIO", "base", kind)),
+            ("Cost by therapeutic area", "lowest", cpa("BIO", "low_area", kind), "highest",
+             cpa("BIO", "high_area", kind)),
+            ("Overhead multiplier", f"×{oh_lo:g}", cpa("BIO", oh_case[oh_lo], kind), f"×{oh_hi:g}",
+             cpa("BIO", oh_case[oh_hi], kind)),
+        ]
+
+    metrics = [
+        (f"P(≥1 approval within {HORIZON_FIG} years), N = {N_FIG}", within_y("BIO", N_FIG, HORIZON_FIG),
+         "{:.1%}", timing_rows(HORIZON_FIG)),
+        ("Expected trial cost per approval", cpa("BIO", "base"), "${:,.0f}M", cost_rows("analytic")),
+    ]
+    fig, axes = plt.subplots(1, 2, figsize=(WIDTH_IN, 6.4))
+    fig.subplots_adjust(left=0.17, right=0.97, top=0.78, bottom=0.33, wspace=0.75)
+    for ax, (mname, base, fmt, rows) in zip(axes, metrics):
+        rows = sorted(rows, key=lambda r: abs(r[4] - r[2]))
+        lo_all = min(min(r[2], r[4]) for r in rows)
+        hi_all = max(max(r[2], r[4]) for r in rows)
+        span = hi_all - lo_all
+        for y, (factor, lo_lab, lo, hi_lab, hi) in enumerate(rows):
+            left, right = min(lo, hi), max(lo, hi)
+            ax.barh(y, max(right - left, span * 0.004), left=left, height=0.5, color=NEUTRAL)
+            for v, lab, side in ((lo, lo_lab, -1 if lo <= hi else 1), (hi, hi_lab, 1 if hi >= lo else -1)):
+                ax.text(v + side * span * 0.03, y, f"{lab}\n{fmt.format(v)}", ha="left" if side > 0 else "right",
+                        va="center", fontsize=9.5, color=COLOR.get(lab, INK))
+        ax.axvline(base, color=COLOR["BIO"], lw=1.5)
+        ax.set_yticks(range(len(rows)))
+        ax.set_yticklabels([r[0] for r in rows], fontsize=10.5, color=INK)
+        ax.grid(axis="y", visible=False)
+        ax.set_xlim(lo_all - span * 0.3, hi_all + span * 0.3)
+        ax.set_ylim(-0.6, len(rows) - 0.4)
+        ax.set_title(mname, fontsize=11.5, color=INK, loc="left", pad=10)
+        ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(4))
+        ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(
+            lambda v, _, f=fmt: f.format(v).replace(".0%", "%")))
+    titles(fig, "What moves the results most?",
+           "Each bar moves one factor across its range; vertical line = baseline (BIO). Only factors that "
+           "change the metric are shown.")
+    footer(fig, [
+        f"Baseline: BIO rates, {gap_base:g}-month gaps, priority-review share {p_mid:g}, ASPE average trial cost, "
+        f"overhead ×{overhead_base:g}.",
+        "Left: simulated. Right: exact, (Phase 2 cost + P(pass Phase 2) × Phase 3 cost) ÷ P(approval).",
+        "Timing factors do not change cost; cost factors do not change timing. Trials per phase ×2 equals "
+        "overhead ×2.",
+    ])
+    fig.savefig(OUT / "fig3_sensitivity.png", dpi=DPI)
+    plt.close(fig)
+
+    notes += [f"## Fig 3: sensitivity, N = {N_FIG}", "",
+              f"Baseline: BIO, gap {gap_base:g} months, p_priority {p_mid:g}, ASPE mean cost, overhead "
+              f"{overhead_base:g}. Each factor moved alone.", "",
+              f"**(i) P(≥1 approval within {HORIZON_FIG} years), N = {N_FIG}**: simulated only (no closed form). "
+              f"Baseline {within_y('BIO', N_FIG, HORIZON_FIG):.4f}.", "",
+              "| Factor | Low setting | Value | High setting | Value |", "|---|---|---|---|---|"]
+    notes += [f"| {f} | {a} | {b:.4f} | {c} | {e:.4f} |" for f, a, b, c, e in timing_rows(HORIZON_FIG)]
+    notes += ["", "**(ii) Expected trial cost per approval (US$ M), N = 5**: analytic (drawn) next to simulated.",
+              "", "| Factor | Low setting | Analytic | Sim | High setting | Analytic | Sim |",
+              "|---|---|---|---|---|---|---|"]
+    for (f, a, b, c, e), (_, _, bs, _, es) in zip(cost_rows("analytic"), cost_rows("sim")):
+        notes.append(f"| {f} | {a} | {b:.2f} | {bs:.2f} | {c} | {e:.2f} | {es:.2f} |")
+    notes += ["", f"Baseline: {cpa('BIO', 'base'):.2f} analytic / {cpa('BIO', 'base', 'sim'):.2f} sim. "
+              "The analytic value does not depend on N.", ""]
+
+    # ---------- moved off the figure: 10-year sensitivity ----------
+    notes += [f"## Not drawn: P(≥1 approval within 10 years), N = {N_FIG} (simulated)", "",
+              f"Baseline {within_y('BIO', N_FIG, 10):.4f}.", "",
+              "| Factor | Low setting | Value | High setting | Value |", "|---|---|---|---|---|"]
+    notes += [f"| {f} | {a} | {b:.4f} | {c} | {e:.4f} |" for f, a, b, c, e in timing_rows(10)]
+    notes.append("")
+
+    # ---------- 5-year table, gap 0 vs gap 6 ----------
+    notes += [f"## P(≥1 approval within {HORIZON_FIG} years), N = 1–10 (simulated, p_priority = {p_mid:g})", "",
+              f"| N | BIO gap {gap_base:g} | BIO gap {gap_hi:g} | Wong gap {gap_base:g} | Wong gap {gap_hi:g} |",
+              "|---|---|---|---|---|"]
+    for i, n in enumerate(ns):
+        notes.append(f"| {n} | {w_top['BIO'][i]:.4f} | {w_lo['BIO'][i]:.4f} | "
+                     f"{w_top['Wong'][i]:.4f} | {w_lo['Wong'][i]:.4f} |")
+    notes += ["", f"Smallest N reaching {TARGET:.0%} within {HORIZON_FIG} years:", ""]
+    for gap, series in ((gap_base, w_top), (gap_hi, w_lo)):
+        notes.append(f"- gap {gap:g} months: " + ", ".join(f"{s} {fmt_n(first_n(ns, series[s]), ns)}" for s in SCEN))
+    notes.append("")
+
+    (OUT / "figure_numbers.md").write_text("\n".join(notes), encoding="utf-8")
+    print("\n".join(notes))
+
+
+if __name__ == "__main__":
+    main()

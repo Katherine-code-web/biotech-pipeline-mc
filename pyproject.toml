@@ -1,0 +1,25 @@
+[project]
+name = "biotech-pipeline-mc"
+version = "0.0.1"
+description = "Monte Carlo model of a Phase 2 drug portfolio: approval odds, timing and clinical trial direct cost"
+license = { text = "MIT" }
+authors = [{ name = "Yun-Ting Su" }]
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=2.0,<2.1",  # 2.0.x is the last line supporting Python 3.9
+    "pypdf>=4",  # scripts/build_assumptions.py
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+figures = ["matplotlib>=3.9,<3.10"]  # scripts/make_figures.py
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
