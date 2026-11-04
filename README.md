@@ -1,5 +1,7 @@
 # biotech-pipeline-mc
 
+![Probability of at least one FDA approval vs number of Phase 2 drugs, BIO and Wong success rates](docs/figures/fig1_p_approval_by_n.png)
+
 ## Summary
 
 How many Phase 2 drugs does a company need for an 80% chance of at least one FDA approval? This Monte Carlo
